@@ -8,7 +8,7 @@ export const KIND = { share: 23400, ack: 23401, assignment: 23402, split: 23403,
 export const DEFAULTS = {
   feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120, maxDifficulty: 1e8,
   minPayout: 546, maxOutputs: 512, staleDepth: 3, splitDelayMs: 500,
-  maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 200, helloTimeoutMs: 15_000,
+  maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 500, helloTimeoutMs: 15_000,
 };
 const WL = 'https://w3id.org/webledgers', DATSTR_CTX = 'https://datstr.com/spec/context.jsonld';
 const now = () => Math.floor(Date.now() / 1000);
@@ -135,7 +135,7 @@ export class Pool {
       else if (since < 60) continue;                                         // otherwise one step a minute
       else if (n === 0) d = since >= 120 ? d0 / 64 : d0;                    // nothing for two minutes: come down fast
       else d = d0 * p.vardiffSeconds * n / since;
-      d = Math.min(d0 * 256, Math.max(d0 / 64, d)); d = Math.min(maxD, Math.max(p.minDifficulty, Number(d.toPrecision(3))));
+      d = Math.min(d0 * 256, Math.max(d0 / 64, d)); d = Math.min(maxD, this.networkDifficulty() || Infinity, Math.max(p.minDifficulty, Number(d.toPrecision(3)))); // never above what a block takes
       if (d / d0 > 1.4 || d / d0 < 0.7) await this.issueAssignment(master, d, `${n} shares in ${since} s`);
     }
   }
