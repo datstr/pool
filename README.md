@@ -26,3 +26,26 @@ same paths as the first coordinator, so `audit/replay.mjs` and the audit page fr
 - `lib/nostr.mjs` signing and verification on the engine's curve
 - `lib/engine.mjs` the bitcoin-kernel engine, local checkout in Node, jsDelivr in a browser
 - `serve.mjs` the standalone server; a JSS plugin comes later
+
+## Where the spec was thin
+
+Written from the text alone, these are the places a second implementer had to decide.
+Each is a candidate spec fix rather than a feature of this coordinator.
+
+- **Owed balances (9.2 step 5).** "Paid first from the next block, before the window split"
+  does not say whether an owed master who is also in the window gets one output or two,
+  or in what order owed masters are paid when the value does not cover them all. Here:
+  one output per master, owed plus window share, and owed paid in pubkey order.
+- **The fee output.** Section 9.2 places the fee at step 2 but not in the output order of
+  step 5. Here it is the last output.
+- **Network difficulty for the window (9.1).** "The network difficulty of the coordinator's
+  current template" assumes a template. Without one this coordinator uses the tip header's
+  bits, which on testnet4 is the minimum-difficulty value between retargets.
+- **Template value for the split (9.2).** Without a template the split is computed at the
+  block subsidy for the height; the gateway scales it to its own value (9.3), so the
+  outputs it mines are the same as they would be from any other V.
+- **Is a share a block (8.1).** "Meets the network target" is judged here by running the
+  chain's header rules on the share's header at its height, which is what a node does.
+- **Relay.** The verifier "submits it to its own node as well" (8.1) is impossible without a
+  node; the block record says so and whether the chain has the block is learned from the
+  node the coordinator follows.
