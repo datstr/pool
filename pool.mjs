@@ -6,7 +6,7 @@ import { makeSigner } from './lib/nostr.mjs';
 
 export const KIND = { share: 23400, ack: 23401, assignment: 23402, split: 23403, pool: 33400, miner: 33401, delegation: 33402 };
 export const DEFAULTS = {
-  feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120,
+  feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120, maxDifficulty: 1e8,
   minPayout: 546, maxOutputs: 512, staleDepth: 3, splitDelayMs: 500,
   maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 200, helloTimeoutMs: 15_000,
 };
@@ -117,20 +117,25 @@ export class Pool {
     this.log(`assignment for ${master.slice(0, 12)}…: difficulty ${difficultyOf(target)} from h${from} (${why})`);
     return rec;
   }
+  // northbound vardiff: aim at one credited share per vardiffSeconds for every connected master,
+  // measured on the shares credited since the master's current assignment
   async retargetAssignments() {
-    const t = now(); if (t - this.lastRetarget < 10) return; this.lastRetarget = t;
-    const window = 120, cut = t - window, counts = new Map();
-    for (let i = this.shares.length - 1; i >= 0 && this.shares[i].at >= cut; i--) counts.set(this.shares[i].master, (counts.get(this.shares[i].master) ?? 0) + 1);
+    const now = Math.floor(Date.now() / 1000);
+    if (now - this.lastRetarget < 10) return; this.lastRetarget = now;
+    const p = this.params, maxD = p.maxDifficulty ?? 1e8;
     const connected = new Set(); for (const c of this.clients) for (const m of c.identities ?? []) connected.add(m);
     for (const master of connected) {
       const cur = this.currentAssignment(master); if (!cur) continue;
-      const n = counts.get(master) ?? 0, since = Math.min(window, t - cur.at);
-      if (t - cur.at < 60 && n < 200) continue; // a minute between steps, unless a flood says otherwise
-      if (n < 8 && since < window) continue;
-      const d0 = difficultyOf(cur.target); let d = d0 * this.params.vardiffSeconds / (since / Math.max(n, 0.5));
-      if (d / d0 < 16) d = Math.min(d0 * 4, Math.max(d0 / 4, d)); // at most 4x a step, unless the rate is wildly off
-      d = Math.max(this.params.minDifficulty, Number(d.toPrecision(3)));
-      if (d / d0 > 1.4 || d / d0 < 0.7) this.issueAssignment(master, d, `${n} shares in ${since} s`);
+      const since = now - cur.at; let n = 0;
+      for (let i = this.shares.length - 1; i >= 0 && this.shares[i].at >= cur.at; i--) if (this.shares[i].master === master) n++;
+      const d0 = difficultyOf(cur.target); let d;
+      if (d0 > maxD) d = maxD;                                              // a runaway or a bad start: back to the ceiling
+      else if (n >= 200 && since >= 5) d = d0 * p.vardiffSeconds * n / since; // a flood: go straight to the measured rate
+      else if (since < 60) continue;                                         // otherwise one step a minute
+      else if (n === 0) d = since >= 120 ? d0 / 64 : d0;                    // nothing for two minutes: come down fast
+      else d = d0 * p.vardiffSeconds * n / since;
+      d = Math.min(d0 * 256, Math.max(d0 / 64, d)); d = Math.min(maxD, Math.max(p.minDifficulty, Number(d.toPrecision(3))));
+      if (d / d0 > 1.4 || d / d0 < 0.7) await this.issueAssignment(master, d, `${n} shares in ${since} s`);
     }
   }
 
