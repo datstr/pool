@@ -8,7 +8,7 @@ export const KIND = { share: 23400, ack: 23401, assignment: 23402, split: 23403,
 export const DEFAULTS = {
   feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120,
   minPayout: 546, maxOutputs: 512, staleDepth: 3, splitDelayMs: 500,
-  maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 20, helloTimeoutMs: 15_000,
+  maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 200, helloTimeoutMs: 15_000,
 };
 const WL = 'https://w3id.org/webledgers', DATSTR_CTX = 'https://datstr.com/spec/context.jsonld';
 const now = () => Math.floor(Date.now() / 1000);
@@ -118,15 +118,18 @@ export class Pool {
     return rec;
   }
   async retargetAssignments() {
-    const t = now(); if (t - this.lastRetarget < 60) return; this.lastRetarget = t;
+    const t = now(); if (t - this.lastRetarget < 10) return; this.lastRetarget = t;
     const window = 120, cut = t - window, counts = new Map();
     for (let i = this.shares.length - 1; i >= 0 && this.shares[i].at >= cut; i--) counts.set(this.shares[i].master, (counts.get(this.shares[i].master) ?? 0) + 1);
     const connected = new Set(); for (const c of this.clients) for (const m of c.identities ?? []) connected.add(m);
     for (const master of connected) {
-      const cur = this.currentAssignment(master); if (!cur || t - cur.at < 60) continue;
-      const n = counts.get(master) ?? 0, since = Math.min(window, t - cur.at); if (n < 8 && since < window) continue;
+      const cur = this.currentAssignment(master); if (!cur) continue;
+      const n = counts.get(master) ?? 0, since = Math.min(window, t - cur.at);
+      if (t - cur.at < 60 && n < 200) continue; // a minute between steps, unless a flood says otherwise
+      if (n < 8 && since < window) continue;
       const d0 = difficultyOf(cur.target); let d = d0 * this.params.vardiffSeconds / (since / Math.max(n, 0.5));
-      d = Math.min(d0 * 4, Math.max(d0 / 4, d)); d = Math.max(this.params.minDifficulty, Number(d.toPrecision(3)));
+      if (d / d0 < 16) d = Math.min(d0 * 4, Math.max(d0 / 4, d)); // at most 4x a step, unless the rate is wildly off
+      d = Math.max(this.params.minDifficulty, Number(d.toPrecision(3)));
       if (d / d0 > 1.4 || d / d0 < 0.7) this.issueAssignment(master, d, `${n} shares in ${since} s`);
     }
   }
