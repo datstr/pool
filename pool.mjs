@@ -97,10 +97,16 @@ export class Pool {
   // --- assignments (8.4) ---
   addAssignment(rec) { this.assignments.set(rec.id, rec); const l = this.assignmentsByMaster.get(rec.master) ?? []; l.push(rec); l.sort((a, b) => a.from - b.from || a.at - b.at); this.assignmentsByMaster.set(rec.master, l); }
   currentAssignment(master) { return this.assignmentsByMaster.get(master)?.at(-1) ?? null; }
+  // 8.4: the latest issued at or before the share's signing time, the one before it within the
+  // grace, or the first issued after it within the grace (clock skew); never anything later
   validAssignments(master, height, time) {
-    const l = (this.assignmentsByMaster.get(master) ?? []).filter((a) => a.from <= height);
-    const latest = l.at(-1); if (!latest) return []; const prev = l.at(-2);
-    return prev && time <= latest.at + this.params.assignmentGrace ? [latest, prev] : [latest];
+    const grace = this.params.assignmentGrace;
+    const all = (this.assignmentsByMaster.get(master) ?? []).filter((a) => a.from <= height);
+    const before = all.filter((a) => a.at <= time), latest = before.at(-1), prev = before.at(-2);
+    const next = all.find((a) => a.at > time && a.at <= time + grace);
+    const ok = [];
+    if (latest) ok.push(latest); if (latest && prev && time <= latest.at + grace) ok.push(prev); if (next) ok.push(next);
+    return ok;
   }
   issueAssignment(master, difficulty, why) {
     const target = targetOf(difficulty), from = Math.max(0, this.chain.height + 1);
