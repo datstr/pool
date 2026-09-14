@@ -19,6 +19,8 @@ const DATA = home(args.data ?? `~/.datstr/pool-${NETWORK.replace(/[^a-z0-9]/gi, 
 const PUBLIC = (args.public ?? `http://${HOST}:${PORT}/`).replace(/\/?$/, '/');
 const num = (v) => (v === undefined ? undefined : Number(v));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
+// the node may be restarting; a failed fetch is logged, never fatal
+process.on('unhandledRejection', (e) => log('unhandled:', e?.message ?? e));
 
 mkdirSync(DATA, { recursive: true });
 const store = {
