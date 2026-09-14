@@ -29,23 +29,20 @@ same paths as the first coordinator, so `audit/replay.mjs` and the audit page fr
 
 ## Where the spec was thin
 
-Written from the text alone, these are the places a second implementer had to decide.
-Each is a candidate spec fix rather than a feature of this coordinator.
+Written from the text alone, these were the places a second implementer had to decide. All
+are now stated in the spec (14 Sep 2026), and `test/split-diff.mjs` runs this split against
+the reference implementation in `datstr/spec` on 20,000 random windows, owed states and
+descriptors: identical.
 
-- **Owed balances (9.2 step 5).** "Paid first from the next block, before the window split"
-  does not say whether an owed master who is also in the window gets one output or two,
-  or in what order owed masters are paid when the value does not cover them all. Here:
-  one output per master, owed plus window share, and owed paid in pubkey order.
-- **The fee output.** Section 9.2 places the fee at step 2 but not in the output order of
-  step 5. Here it is the last output.
-- **Network difficulty for the window (9.1).** "The network difficulty of the coordinator's
-  current template" assumes a template. Without one this coordinator uses the tip header's
-  bits, which on testnet4 is the minimum-difficulty value between retargets.
-- **Template value for the split (9.2).** Without a template the split is computed at the
-  block subsidy for the height; the gateway scales it to its own value (9.3), so the
-  outputs it mines are the same as they would be from any other V.
-- **Is a share a block (8.1).** "Meets the network target" is judged here by running the
-  chain's header rules on the share's header at its height, which is what a node does.
-- **Relay.** The verifier "submits it to its own node as well" (8.1) is impossible without a
-  node; the block record says so and whether the chain has the block is learned from the
-  node the coordinator follows.
+- **Owed balances (9.2).** Paid first, in ascending pubkey order, each as its own output
+  when at least `minPayout`, before the window split; the window's cap is reduced by them.
+- **The fee output** is the last output; the list is owed, window, fee.
+- **Network difficulty for the window (9.1)** is that of the next block: the template's
+  target when there is one, else what the chain's rules require after the tip.
+- **The value the split is computed at (9.2)** is the template value when there is one,
+  else the subsidy at the height; it fixes proportions and rounding only.
+- **A share is a block (8.1)** when its header is a valid next block header by the chain's
+  rules; a template's target is the same test.
+- **Relay (8.1).** A verifier without a node records the block and learns from the chain it
+  follows whether the block is on it; the record's `relay` field says so.
+- **Which assignment a share may name (8.4)** is relative to the share's signing time.
