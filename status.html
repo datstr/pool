@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>datstr pool</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--line:#e3e6eb;--text:#1f2430;--muted:#6b7280;--ok:#15803d;--link:#1d4ed8}
+  body{margin:0;padding:24px 16px;background:var(--bg);color:var(--text);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  h1{font-size:18px;margin:0 0 4px} .sub{color:var(--muted);margin-bottom:20px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;max-width:1100px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .k{color:var(--muted)} .v{font-size:20px;margin:2px 0 8px;word-break:break-all} .s{color:var(--muted);font-size:12px;word-break:break-all}
+  table{width:100%;border-collapse:collapse;font-size:13px} td{padding:3px 6px 3px 0;border-bottom:1px solid var(--line);white-space:nowrap} td:first-child{color:var(--muted)}
+  a{color:var(--link);text-decoration:none}
+</style>
+<h1>datstr pool <span id="chain"></span></h1>
+<div class="sub">a coordinator with no full node: the chain is a <a href="https://github.com/bitcoin-blake/blaketestnode">blaketestnode</a> · <a href="stats.json">stats.json</a> · <a href="pool.json">pool.json</a> · <a href="ledgers/">ledgers</a> · <a href="shares.jsonl">shares</a> · <a href="assignments.jsonl">assignments</a></div>
+<div class="grid">
+  <div class="card"><div class="k">coordinator</div><div class="v" id="pubkey">…</div><div class="s" id="node"></div></div>
+  <div class="card"><div class="k">chain</div><div class="v" id="height">…</div><div class="s" id="hash"></div></div>
+  <div class="card"><div class="k">window</div><div class="v" id="window">…</div><div class="s" id="windows"></div></div>
+  <div class="card"><div class="k">shares</div><div class="v" id="shares">…</div><div class="s" id="sharess"></div></div>
+  <div class="card"><div class="k">blocks</div><div class="v" id="blocks">…</div><div class="s" id="blockss"></div></div>
+  <div class="card"><div class="k">masters in the window</div><table id="masters"></table></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+async function tick() {
+  const s = await (await fetch('stats.json', { cache: 'no-store' })).json();
+  $('chain').textContent = s.chain; $('pubkey').textContent = s.pubkey.slice(0, 24) + '…'; $('node').textContent = `node ${s.node} · up ${Math.round(s.uptime_seconds / 60)} min · ${s.connections} gateway socket${s.connections === 1 ? '' : 's'}`;
+  $('height').textContent = s.height.toLocaleString(); $('hash').textContent = `${s.hash} · network difficulty ${s.network_difficulty.toFixed(3)} · split ${s.split ? s.split.slice(0, 12) + '…' : 'none'}`;
+  $('window').textContent = `${s.window.shares.toLocaleString()} shares`; $('windows').textContent = `weight ${s.window.weight.toFixed(3)} of ${s.window.need.toFixed(3)} needed`;
+  $('shares').textContent = s.shares_total.toLocaleString(); $('sharess').textContent = `${s.shares_last_10min} in the last 10 min · ${s.receipts} receipts · ${s.stats.rejected} refused ${JSON.stringify(s.stats.byCode)}`;
+  $('blocks').textContent = s.stats.blocks; $('blockss').textContent = s.blocks.slice(0, 5).map((b) => `${b.height} ${b.hash.slice(0, 12)}… ${b.onChain ? 'on chain' : 'pending'}`).join(' · ');
+  $('masters').innerHTML = Object.entries(s.window.perMaster).sort((a, b) => b[1] - a[1]).map(([m, w]) => `<tr><td>${m.slice(0, 16)}…</td><td>${w.toFixed(3)}</td></tr>`).join('') || '<tr><td>none yet</td></tr>';
+}
+tick(); setInterval(tick, 10000);
+</script>

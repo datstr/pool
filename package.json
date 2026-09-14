@@ -1,0 +1,8 @@
+{
+  "name": "datstr-pool",
+  "version": "0.0.1",
+  "description": "A datstr coordinator written from the spec, with no full node: chain answers come from a blaketestnode",
+  "type": "module",
+  "bin": { "datstr-pool": "serve.mjs" },
+  "license": "MIT"
+}
