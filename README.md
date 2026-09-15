@@ -46,3 +46,5 @@ descriptors: identical.
 - **Relay (8.1).** A verifier without a node records the block and learns from the chain it
   follows whether the block is on it; the record's `relay` field says so.
 - **Which assignment a share may name (8.4)** is relative to the share's signing time.
+- **Delegations carry the worker's consent (4)** and the hello is signed (11.1, NIP-98 shape),
+  since 15 Sep 2026; a delegation without consent binds nothing here either.

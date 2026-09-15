@@ -135,7 +135,7 @@ export class Pool {
       else if (since < 60) continue;                                         // otherwise one step a minute
       else if (n === 0) d = since >= 120 ? d0 / 64 : d0;                    // nothing for two minutes: come down fast
       else d = d0 * p.vardiffSeconds * n / since;
-      d = Math.min(d0 * 256, Math.max(d0 / 64, d)); d = Math.min(maxD, this.networkDifficulty() || Infinity, Math.max(p.minDifficulty, Number(d.toPrecision(3)))); // never above what a block takes
+      d = Math.min(d0 * 256, Math.max(d0 / 64, d)); d = Math.max(p.minDifficulty, Math.min(maxD, this.networkDifficulty() || Infinity, Number(d.toPrecision(3)))); // never above what a block takes, never below the pool's floor
       if (d / d0 > 1.4 || d / d0 < 0.7) await this.issueAssignment(master, d, `${n} shares in ${since} s`);
     }
   }
@@ -163,6 +163,10 @@ export class Pool {
       try {
         if (m?.type === 'hello') {
           const r = this.register(conn, m); if (r.error) return conn.send({ type: 'error', error: r.error });
+          // SPEC 11.1: the hello is signed by the key the socket will sign shares with, fresh, for this endpoint
+          let authPath = null; try { authPath = this.endpoints.ws ? new URL(this.endpoints.ws).pathname : null; } catch {}
+          const bad = this.nostr.checkAuth(m.auth, { pubkey: r.worker ?? r.master, path: authPath, seen: this.authSeen ??= new Map() });
+          if (bad) { this.stats.refusedConnections++; this.log(`gateway ${conn.remote ?? ''} refused: ${bad}`); return kick(bad); }
           conn.master = r.master; conn.worker = r.worker; conn.agent = m.agent ?? '';
           this.log(`gateway ${conn.remote ?? ''} hello: master ${r.master.slice(0, 16)}…${r.worker ? ` worker ${r.worker.slice(0, 16)}…` : ''} (${conn.agent})`);
           conn.send({ type: 'welcome', pool: this.descriptor, split: this.splits.get(this.chain.height + 1)?.event ?? null });
@@ -191,6 +195,7 @@ export class Pool {
       if (g.kind !== KIND.delegation || !this.nostr.verify(g) || g.pubkey !== d.pubkey) return { error: 'delegation must be kind 33402 signed by the descriptor\'s master' };
       const gc = this.nostr.content(g); const rule = gc?.chains?.[this.chainId];
       if (!/^[0-9a-f]{64}$/i.test(gc?.worker ?? '') || !rule) return { error: 'delegation names no worker for this chain' };
+      if (!this.nostr.verifyConsent(g)) return { error: 'delegation carries no valid consent from the worker (SPEC 4)' };
       const rec = { worker: gc.worker.toLowerCase(), master: d.pubkey, expires: rule.expires ?? null, delegation: g };
       const old = this.workers.get(rec.worker);
       if (!old || old.delegation.created_at < g.created_at) { this.workers.set(rec.worker, rec); this.store.append('delegations.jsonl', JSON.stringify(rec)); }
