@@ -8,7 +8,7 @@ export const KIND = { share: 23400, ack: 23401, assignment: 23402, split: 23403,
 export const DEFAULTS = {
   feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120, maxDifficulty: 1e8,
   minPayout: 546, maxOutputs: 512, staleDepth: 3, splitDelayMs: 500,
-  maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 500, helloTimeoutMs: 15_000,
+  maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 500, helloTimeoutMs: 15_000, requireAuth: false,
 };
 const WL = 'https://w3id.org/webledgers', DATSTR_CTX = 'https://datstr.com/spec/context.jsonld';
 const now = () => Math.floor(Date.now() / 1000);
@@ -163,9 +163,9 @@ export class Pool {
       try {
         if (m?.type === 'hello') {
           const r = this.register(conn, m); if (r.error) return conn.send({ type: 'error', error: r.error });
-          // SPEC 11.1: the hello is signed by the key the socket will sign shares with, fresh, for this endpoint
+          // SPEC 11.1: a signed hello is optional; checked when present, required only with requireAuth
           let authPath = null; try { authPath = this.endpoints.ws ? new URL(this.endpoints.ws).pathname : null; } catch {}
-          const bad = this.nostr.checkAuth(m.auth, { pubkey: r.worker ?? r.master, path: authPath, seen: this.authSeen ??= new Map() });
+          const bad = (m.auth || p.requireAuth) ? this.nostr.checkAuth(m.auth, { pubkey: r.worker ?? r.master, path: authPath, seen: this.authSeen ??= new Map() }) : null;
           if (bad) { this.stats.refusedConnections++; this.log(`gateway ${conn.remote ?? ''} refused: ${bad}`); return kick(bad); }
           conn.master = r.master; conn.worker = r.worker; conn.agent = m.agent ?? '';
           this.log(`gateway ${conn.remote ?? ''} hello: master ${r.master.slice(0, 16)}…${r.worker ? ` worker ${r.worker.slice(0, 16)}…` : ''} (${conn.agent})`);
