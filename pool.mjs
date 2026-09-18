@@ -6,7 +6,7 @@ import { makeSigner } from './lib/nostr.mjs';
 
 export const KIND = { share: 23400, ack: 23401, assignment: 23402, split: 23403, pool: 33400, miner: 33401, delegation: 33402 };
 export const DEFAULTS = {
-  feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120, maxDifficulty: 1e8,
+  feeBps: 0, feeScript: null, windowMultiple: 2, windowMinWeight: 0, windowMaxAge: 0, minDifficulty: 1, startDifficulty: 1, vardiffSeconds: 10, assignmentGrace: 120, maxDifficulty: 1e8,
   minPayout: 546, maxOutputs: 512, staleDepth: 3, splitDelayMs: 500,
   maxConnections: 256, maxPerAddress: 16, maxMessageBytes: 4 << 20, maxMessagesPerSecond: 500, helloTimeoutMs: 15_000, requireAuth: false,
 };
@@ -57,19 +57,20 @@ export class Pool {
     if (this.chain.height !== height) return; // moved again meanwhile
     await this.issueSplit(next);
   }
+  windowOpts(now = Math.floor(Date.now() / 1000)) { return { maxAge: this.params.windowMaxAge ?? 0, now }; }
   async issueSplit(height) {
-    const need = this.need(), win = windowOf(this.shares, need);
+    const at = Math.floor(Date.now() / 1000); const need = this.need(), win = windowOf(this.shares, need, this.windowOpts(at));
     const V = this.k.blocks.subsidy(height);
     const r = computeSplit(win.shares, V, this.params, this.owed);
     const outputs = r.outputs.map((o) => [o.script ?? this.masters.get(o.master)?.payout, o.value]).filter(([s]) => s);
     const seqs = win.shares.map((s) => s.seq);
-    const content = { chain: this.chainId, height, outputs, window: { from: seqs[0] ?? null, to: seqs.at(-1) ?? null, weight: win.weight, need }, owed: Object.entries(r.owed) };
+    const content = { chain: this.chainId, height, outputs, window: { from: seqs[0] ?? null, to: seqs.at(-1) ?? null, weight: win.weight, need, maxAge: this.params.windowMaxAge ?? 0, at }, owed: Object.entries(r.owed) };
     const ev = this.nostr.sign(this.key, { kind: KIND.split, tags: [['chain', this.chainId], ['h', String(height)]], content });
     const split = { height, event: ev, outputs, owedBefore: { ...this.owed }, owedAfter: r.owed, sharesUpTo: this.shares.length, win };
     this.splits.set(height, split);
     for (const h of [...this.splits.keys()]) if (h < height - 50) this.splits.delete(h);
     const perMaster = {}; for (const s of win.shares) perMaster[s.master] = (perMaster[s.master] ?? 0) + s.weight;
-    this.store.write(`snapshots/${height}.json`, JSON.stringify({ '@context': DATSTR_CTX, '@type': 'datstr:LedgerSnapshot', chain: this.chainId, coordinator: this.pubkey, height, split: ev.id, outputs, sharesUpTo: split.sharesUpTo, window: { fromSeq: seqs[0] ?? null, toSeq: seqs.at(-1) ?? null, weight: win.weight, shares: win.shares.map((s) => s.id) }, need, perMaster, tipValue: V, owedBefore: split.owedBefore, owedAfter: r.owed, at: now() }, null, 1));
+    this.store.write(`snapshots/${height}.json`, JSON.stringify({ '@context': DATSTR_CTX, '@type': 'datstr:LedgerSnapshot', chain: this.chainId, coordinator: this.pubkey, height, split: ev.id, outputs, sharesUpTo: split.sharesUpTo, need, maxAge: this.params.windowMaxAge ?? 0, at, window: { fromSeq: seqs[0] ?? null, toSeq: seqs.at(-1) ?? null, weight: win.weight, shares: win.shares.map((s) => s.id) }, need, perMaster, tipValue: V, owedBefore: split.owedBefore, owedAfter: r.owed, at: now() }, null, 1));
     this.writeLedgers(height, win, r, outputs, ev.id);
     this.log(`split h${height}: ${outputs.length} outputs from ${win.shares.length} shares (weight ${win.weight} of ${need}), value ${V}`);
     this.broadcast({ type: 'split', event: ev });
@@ -344,7 +345,7 @@ export class Pool {
 
   // --- documents (11) ---
   snapshot() {
-    const win = windowOf(this.shares, this.need());
+    const win = windowOf(this.shares, this.need(), this.windowOpts());
     const perMaster = {}; for (const s of win.shares) perMaster[s.master] = (perMaster[s.master] ?? 0) + s.weight;
     const cut = now() - 600, recent = this.shares.filter((s) => s.at >= cut);
     return { version: 'datstr-pool/0.0.1', pubkey: this.pubkey, chain: this.chainId, node: this.chain.url, height: this.chain.height, hash: this.chain.hash, uptime_seconds: Math.floor((Date.now() - this.started) / 1000), params: this.params,

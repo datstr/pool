@@ -8,8 +8,9 @@ let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648
 const masters = Array.from({ length: 12 }, (_, i) => `${i.toString(16).padStart(2, '0')}`.repeat(32));
 let same = 0, diff = 0;
 for (let n = 0; n < 20000; n++) {
-  const shares = Array.from({ length: Math.floor(rnd() * 40) }, () => ({ master: masters[Math.floor(rnd() * (1 + rnd() * 11))], weight: Number((rnd() * 4).toFixed(3)) }));
-  const need = rnd() * 40, win = A.windowOf(shares, need), winB = B.windowOf(shares, need);
+  const shares = Array.from({ length: Math.floor(rnd() * 40) }, (_, i) => ({ master: masters[Math.floor(rnd() * (1 + rnd() * 11))], weight: Number((rnd() * 4).toFixed(3)), at: 1000 + i * Math.floor(rnd() * 300) }));
+  const opts = rnd() < 0.5 ? { maxAge: Math.floor(rnd() * 4000), now: 1000 + 40 * 150 } : {};
+  const need = rnd() * 40, win = A.windowOf(shares, need, opts), winB = B.windowOf(shares, need, opts);
   const V = Math.floor(rnd() * 6e9) + 1, p = { feeBps: rnd() < 0.3 ? Math.floor(rnd() * 500) : 0, feeScript: 'ab'.repeat(22), minPayout: [546, 1e6, 1e9][Math.floor(rnd() * 3)], maxOutputs: [512, 3, 1][Math.floor(rnd() * 3)] };
   const owed = {}; if (rnd() < 0.5) for (let i = 0; i < 4; i++) owed[masters[Math.floor(rnd() * 12)]] = Math.floor(rnd() * 3e9);
   const ra = A.computeSplit(win.shares, V, p, owed), rb = B.computeSplit(winB.shares, V, p, owed);
